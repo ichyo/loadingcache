@@ -135,6 +135,48 @@ func TestForget(t *testing.T) {
 	}
 }
 
+func TestDoWithDuration(t *testing.T) {
+	var g Group[string, int]
+
+	var (
+		firstStarted = make(chan struct{})
+		unblockFirst = make(chan struct{})
+	)
+
+	go func() {
+		g.Do("key", time.Millisecond*10, func() (int, error) {
+			close(firstStarted)
+			<-unblockFirst
+			return 1, nil
+		})
+	}()
+
+	<-firstStarted
+
+	secondResult := g.DoChan("key", time.Millisecond*10, func() (int, error) {
+		return 2, nil
+	})
+
+	time.Sleep(time.Millisecond * 20)
+	// here it passes more than the duration passed to the first Do.
+
+	thirdResult := g.DoChan("key", 0, func() (int, error) {
+		return 3, nil
+	})
+
+	close(unblockFirst)
+
+	r := <-secondResult
+	if r.Val != 1 {
+		t.Errorf("We should receive result produced by first call, expected: 1, got %d", r.Val)
+	}
+
+	r = <-thirdResult
+	if r.Val != 3 {
+		t.Errorf("We should receive result produced by third call, expected: 3, got %d", r.Val)
+	}
+}
+
 func TestDoChan(t *testing.T) {
 	var g Group[string, any]
 	ch := g.DoChan("key", 0, func() (interface{}, error) {
