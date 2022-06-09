@@ -64,7 +64,7 @@ func (c *LoadingCache[K, V]) Get(key K) (*V, error) {
 		}
 
 		start := time.Now()
-		expireTime := start.Add(c.expireAfterLoadStart)
+
 		value, err := c.loader(key)
 
 		if err != nil {
@@ -73,9 +73,14 @@ func (c *LoadingCache[K, V]) Get(key K) (*V, error) {
 			return nil, err
 		}
 
-		ttl := expireTime.Sub(time.Now())
-		if ttl > 0 {
-			c.cache.SetWithTTL(key, value, 1, ttl)
+		if c.expireAfterLoadStart <= 0 {
+			c.cache.Set(key, &value, 1)
+		} else {
+			expireTime := start.Add(c.expireAfterLoadStart)
+			ttl := expireTime.Sub(time.Now())
+			if ttl > 0 {
+				c.cache.SetWithTTL(key, &value, 1, ttl)
+			}
 		}
 
 		return &value, nil

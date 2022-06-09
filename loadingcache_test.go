@@ -2,14 +2,17 @@ package loadingcache_test
 
 import (
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/ichyo/loadingcache"
 )
 
 func TestSingleLoad(t *testing.T) {
 	cache, err := loadingcache.NewCache(&loadingcache.Config[string, string]{
-		MaxItems: 10,
+		MaxItems: 100,
 		Loader: func(s string) (string, error) {
 			return s + "!", nil
 		},
@@ -30,7 +33,7 @@ func TestSingleLoad(t *testing.T) {
 func TestLoadError(t *testing.T) {
 	loadError := errors.New("failing for test")
 	cache, err := loadingcache.NewCache(&loadingcache.Config[string, *string]{
-		MaxItems: 10,
+		MaxItems: 100,
 		Loader: func(s string) (*string, error) {
 			return nil, loadError
 		},
@@ -50,7 +53,7 @@ func TestLoadError(t *testing.T) {
 
 func TestLoadPanic(t *testing.T) {
 	cache, err := loadingcache.NewCache(&loadingcache.Config[string, *string]{
-		MaxItems: 10,
+		MaxItems: 100,
 		Loader: func(s string) (*string, error) {
 			panic("panic for test")
 		},
@@ -67,4 +70,83 @@ func TestLoadPanic(t *testing.T) {
 	}()
 	_, err = cache.Get("foo")
 	t.Logf("returned err is: %+v", err)
+}
+
+func TestLoadOnlyOnce(t *testing.T) {
+	// Note: This test and TestLoadOnlyTwiceWithDelay is not correct
+	// because underlying cache may not return value immediately after write (maybe)
+	// Remove sleep in Loader to reproduce that.
+
+	var call int32
+
+	cache, err := loadingcache.NewCache(&loadingcache.Config[string, string]{
+		MaxItems: 10,
+		Loader: func(s string) (string, error) {
+			atomic.AddInt32(&call, 1)
+			time.Sleep(10 * time.Millisecond) // a bit heavy task
+			return s + "!", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error from NewCache: %v", err)
+	}
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < 1000; i++ {
+		wg.Add(1)
+		go func() {
+			cache.Get("foo")
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+
+	if call != 1 {
+		t.Fatalf("expected 1 loader call but %d", call)
+	}
+}
+
+func TestLoadOnlyTwiceWithDelay(t *testing.T) {
+	var call int32
+
+	cache, err := loadingcache.NewCache(&loadingcache.Config[string, string]{
+		MaxItems: 10,
+		Loader: func(s string) (string, error) {
+			atomic.AddInt32(&call, 1)
+			time.Sleep(10 * time.Millisecond) // a bit heavy task
+			return s + "!", nil
+		},
+		ExpireAfterLoadStart: 100 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error from NewCache: %v", err)
+	}
+
+	var wg sync.WaitGroup
+
+	for i := 0; i < 1000; i++ {
+		wg.Add(1)
+		go func() {
+			cache.Get("foo")
+			wg.Done()
+		}()
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	for i := 0; i < 1000; i++ {
+		wg.Add(1)
+		go func() {
+			cache.Get("foo")
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+
+	if call != 2 {
+		t.Fatalf("expected 2 loader calls but %d", call)
+	}
 }
