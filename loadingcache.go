@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/dgraph-io/ristretto"
+	"github.com/bluele/gcache"
 	"github.com/ichyo/loadingcache/singleflight"
 )
 
@@ -14,7 +14,7 @@ type Config[K comparable, V any] struct {
 	// Required: the loading fuction to fill in a value
 	Loader LoaderFunc[K, V]
 	// Required: the maximum number of items to store in cache.
-	MaxItems int64
+	MaxItems int
 
 	// expire time from when the load fuction execution started
 	// zero value means values won't be expired unless they are manually cleared.
@@ -22,7 +22,7 @@ type Config[K comparable, V any] struct {
 }
 
 type LoadingCache[K comparable, V any] struct {
-	cache                *ristretto.Cache
+	cache                gcache.Cache
 	group                singleflight.Group[K, *V]
 	loader               LoaderFunc[K, V]
 	expireAfterLoadStart time.Duration
@@ -38,14 +38,7 @@ func NewCache[K comparable, V any](config *Config[K, V]) (*LoadingCache[K, V], e
 	if config.ExpireAfterLoadStart < 0 {
 		return nil, errors.New("ExpireAfterLoadStart must not be nagative")
 	}
-	cache, err := ristretto.NewCache(&ristretto.Config{
-		NumCounters: config.MaxItems * 10,
-		MaxCost:     config.MaxItems,
-		BufferItems: 64,
-	})
-	if err != nil {
-		return nil, err
-	}
+	cache := gcache.New(config.MaxItems).ARC().Build()
 	return &LoadingCache[K, V]{cache: cache, group: singleflight.Group[K, *V]{}, loader: config.Loader, expireAfterLoadStart: config.ExpireAfterLoadStart}, nil
 }
 
@@ -74,12 +67,12 @@ func (c *LoadingCache[K, V]) Get(key K) (*V, error) {
 		}
 
 		if c.expireAfterLoadStart <= 0 {
-			c.cache.Set(key, &value, 1)
+			c.cache.Set(key, &value)
 		} else {
 			expireTime := start.Add(c.expireAfterLoadStart)
 			ttl := expireTime.Sub(time.Now())
 			if ttl > 0 {
-				c.cache.SetWithTTL(key, &value, 1, ttl)
+				c.cache.SetWithExpire(key, &value, ttl)
 			}
 		}
 
@@ -90,8 +83,8 @@ func (c *LoadingCache[K, V]) Get(key K) (*V, error) {
 }
 
 func (c *LoadingCache[K, V]) getFromInternalCache(key K) (*V, bool) {
-	value, cacheHit := c.cache.Get(key)
-	if cacheHit {
+	value, err := c.cache.Get(key)
+	if err == nil {
 		return value.(*V), true
 	} else {
 		return nil, false

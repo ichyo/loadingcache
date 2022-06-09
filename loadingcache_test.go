@@ -73,17 +73,12 @@ func TestLoadPanic(t *testing.T) {
 }
 
 func TestLoadOnlyOnce(t *testing.T) {
-	// Note: This test and TestLoadOnlyTwiceWithDelay is not correct
-	// because underlying cache may not return value immediately after write (maybe)
-	// Remove sleep in Loader to reproduce that.
-
 	var call int32
 
 	cache, err := loadingcache.NewCache(&loadingcache.Config[string, string]{
 		MaxItems: 10,
 		Loader: func(s string) (string, error) {
 			atomic.AddInt32(&call, 1)
-			time.Sleep(10 * time.Millisecond) // a bit heavy task
 			return s + "!", nil
 		},
 	})
@@ -115,7 +110,6 @@ func TestLoadOnlyTwiceWithDelay(t *testing.T) {
 		MaxItems: 10,
 		Loader: func(s string) (string, error) {
 			atomic.AddInt32(&call, 1)
-			time.Sleep(10 * time.Millisecond) // a bit heavy task
 			return s + "!", nil
 		},
 		ExpireAfterLoadStart: 100 * time.Millisecond,
