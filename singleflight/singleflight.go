@@ -116,7 +116,7 @@ func (g *Group[K, V]) Do(key K, duration time.Duration, fn func() (V, error)) (v
 	c := new(call[V])
 	c.wg.Add(1)
 	g.m[key] = c
-	if duration <= 0 {
+	if duration > 0 {
 		c.forgetTime = time.Now().Add(duration)
 	}
 	g.mu.Unlock()
@@ -151,7 +151,7 @@ func (g *Group[K, V]) DoChan(key K, duration time.Duration, fn func() (V, error)
 	c := &call[V]{chans: []chan<- Result[V]{ch}}
 	c.wg.Add(1)
 	g.m[key] = c
-	if duration <= 0 {
+	if duration > 0 {
 		c.forgetTime = time.Now().Add(duration)
 	}
 	g.mu.Unlock()
