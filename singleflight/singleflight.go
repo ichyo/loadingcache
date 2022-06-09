@@ -96,9 +96,7 @@ func (g *Group[K, V]) Do(key K, duration time.Duration, fn func() (V, error)) (v
 	}
 	if c, ok := g.m[key]; ok {
 		if !c.forgetTime.IsZero() && time.Now().After(c.forgetTime) {
-			if c, ok := g.m[key]; ok {
-				c.forgotten = true
-			}
+			c.forgotten = true
 			delete(g.m, key)
 		} else {
 			c.dups++
@@ -137,9 +135,7 @@ func (g *Group[K, V]) DoChan(key K, duration time.Duration, fn func() (V, error)
 	}
 	if c, ok := g.m[key]; ok {
 		if !c.forgetTime.IsZero() && time.Now().After(c.forgetTime) {
-			if c, ok := g.m[key]; ok {
-				c.forgotten = true
-			}
+			c.forgotten = true
 			delete(g.m, key)
 		} else {
 			c.dups++
