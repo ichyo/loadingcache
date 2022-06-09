@@ -22,17 +22,17 @@ var errGoexit = errors.New("runtime.Goexit was called")
 
 // A panicError is an arbitrary value recovered from a panic
 // with the stack trace during the execution of given function.
-type panicError[V any] struct {
-	value V
+type panicError struct {
+	value any
 	stack []byte
 }
 
 // Error implements error interface.
-func (p *panicError[V]) Error() string {
+func (p *panicError) Error() string {
 	return fmt.Sprintf("%v\n\n%s", p.value, p.stack)
 }
 
-func newPanicError[V any](v V) error {
+func newPanicError(v any) error {
 	stack := debug.Stack()
 
 	// The first line of the stack trace is of the form "goroutine N [status]:"
@@ -41,7 +41,7 @@ func newPanicError[V any](v V) error {
 	if line := bytes.IndexByte(stack[:], '\n'); line >= 0 {
 		stack = stack[line+1:]
 	}
-	return &panicError[V]{value: v, stack: stack}
+	return &panicError{value: v, stack: stack}
 }
 
 // call is an in-flight or completed singleflight.Do call
@@ -105,7 +105,7 @@ func (g *Group[K, V]) Do(key K, duration time.Duration, fn func() (V, error)) (v
 			g.mu.Unlock()
 			c.wg.Wait()
 
-			if e, ok := c.err.(*panicError[V]); ok {
+			if e, ok := c.err.(*panicError); ok {
 				panic(e)
 			} else if c.err == errGoexit {
 				runtime.Goexit()
@@ -181,7 +181,7 @@ func (g *Group[K, V]) doCall(c *call[V], key K, fn func() (V, error)) {
 			delete(g.m, key)
 		}
 
-		if e, ok := c.err.(*panicError[V]); ok {
+		if e, ok := c.err.(*panicError); ok {
 			// In order to prevent the waiting channels from being blocked forever,
 			// needs to ensure that this panic cannot be recovered.
 			if len(c.chans) > 0 {
