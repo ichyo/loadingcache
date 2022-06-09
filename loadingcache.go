@@ -28,7 +28,7 @@ type LoadingCache[K comparable, V any] struct {
 	expireAfterLoadStart time.Duration
 }
 
-func NewCache[K comparable, V any](config Config[K, V]) (*LoadingCache[K, V], error) {
+func NewCache[K comparable, V any](config *Config[K, V]) (*LoadingCache[K, V], error) {
 	if config.MaxItems <= 0 {
 		return nil, errors.New("MaxItems must be positive")
 	}
