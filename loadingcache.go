@@ -124,3 +124,7 @@ func (c *LoadingCache[K, V]) getFromInternalCache(key K) (*V, bool) {
 		return nil, false
 	}
 }
+
+func (c *LoadingCache[K, V]) Clear() {
+	c.cache.Purge()
+}
