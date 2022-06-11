@@ -2,11 +2,30 @@ package loadingcache
 
 import (
 	"errors"
+	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/bluele/gcache"
 	"github.com/ichyo/loadingcache/singleflight"
 )
+
+// An AtomicInt is an int64 to be accessed atomically.
+type AtomicInt int64
+
+// Add atomically adds n to i.
+func (i *AtomicInt) Add(n int64) {
+	atomic.AddInt64((*int64)(i), n)
+}
+
+// Get atomically gets the value of i.
+func (i *AtomicInt) Get() int64 {
+	return atomic.LoadInt64((*int64)(i))
+}
+
+func (i *AtomicInt) String() string {
+	return strconv.FormatInt(i.Get(), 10)
+}
 
 type LoaderFunc[K comparable, V any] func(K) (V, error)
 
@@ -26,6 +45,15 @@ type LoadingCache[K comparable, V any] struct {
 	group                singleflight.Group[K, *V]
 	loader               LoaderFunc[K, V]
 	expireAfterLoadStart time.Duration
+
+	Stats Stats
+}
+
+type Stats struct {
+	Gets         AtomicInt
+	CacheHits    AtomicInt
+	Loads        AtomicInt
+	LoadsDeduped AtomicInt
 }
 
 func NewCache[K comparable, V any](config *Config[K, V]) (*LoadingCache[K, V], error) {
@@ -43,19 +71,25 @@ func NewCache[K comparable, V any](config *Config[K, V]) (*LoadingCache[K, V], e
 }
 
 func (c *LoadingCache[K, V]) Get(key K) (*V, error) {
+	c.Stats.Gets.Add(1)
+
 	cacheValue, cacheHit := c.getFromInternalCache(key)
 	if cacheHit {
+		c.Stats.CacheHits.Add(1)
 		return cacheValue, nil
 	}
 
+	c.Stats.Loads.Add(1)
 	value, err, _ := c.group.Do(key, c.expireAfterLoadStart, func() (*V, error) {
 		// Check the cache again.
 		// See https://github.com/golang/groupcache/blob/master/groupcache.go#L240 for the reason.
 		cacheValue, cacheHit := c.getFromInternalCache(key)
 		if cacheHit {
+			c.Stats.CacheHits.Add(1)
 			return cacheValue, nil
 		}
 
+		c.Stats.LoadsDeduped.Add(1)
 		start := time.Now()
 
 		value, err := c.loader(key)
